@@ -13,7 +13,7 @@
    これだけでも、アプリのように使えます。
 
 ## 2. Google Play に出す手順
-1. **privacy.html の連絡先を書き換える**（【ここに…】の部分）。
+1. rigaojiaji@gmail.com
 2. https://www.pwabuilder.com にPages のURLを入力 → Android のパッケージを生成（Play Store 用の AAB）。
    - Package ID 例: com.あなたの名前.weightlog （一度公開すると変更できません）
    - 署名キー（keystore）が作られる。**必ず安全な場所に保管**（無くすと更新できなくなります）。
