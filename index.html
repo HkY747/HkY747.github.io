@@ -1,0 +1,677 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>体重ログ</title>
+<meta name="description" content="測った日時つきで体重を記録できる、シンプルな体重管理アプリ">
+<meta name="theme-color" content="#0d7a6e">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icons/icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<style>
+  html { color-scheme: light; -webkit-text-size-adjust: 100%; }
+  body { margin: 0; }
+
+  /* Layout: one narrow column. Latest reading on top, quick entry, trend chart, then a day-by-day log with times. */
+  :root {
+    --bg: #f2f6f5;
+    --surface: #ffffff;
+    --fg: #14201e;
+    --muted: #5b6d69;
+    --line: #d8e2df;
+    --accent: #0d7a6e;
+    --accent-fg: #ffffff;
+    --accent-soft: #e0f1ed;
+    --goal: #b06f0f;
+    --danger: #b42318;
+    --font-body: system-ui, -apple-system, "Hiragino Sans", "Noto Sans JP", "Yu Gothic", "Meiryo", sans-serif;
+    --font-num: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0e1514;
+      --surface: #162120;
+      --fg: #e6efed;
+      --muted: #93a8a3;
+      --line: #263533;
+      --accent: #3cc4b2;
+      --accent-fg: #06201c;
+      --accent-soft: #16332f;
+      --goal: #e0a84a;
+      --danger: #f2766a;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0e1514;
+    --surface: #162120;
+    --fg: #e6efed;
+    --muted: #93a8a3;
+    --line: #263533;
+    --accent: #3cc4b2;
+    --accent-fg: #06201c;
+    --accent-soft: #16332f;
+    --goal: #e0a84a;
+    --danger: #f2766a;
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--font-body);
+    font-size: 15px;
+    line-height: 1.6;
+    padding-block: 20px 56px;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+  }
+  .wrap { max-width: 640px; margin: 0 auto; display: flex; flex-direction: column; gap: 28px; }
+  .wrap > * { min-width: 0; }
+
+  button, input { font: inherit; color: inherit; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .top { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .brand { font-size: 17px; font-weight: 700; letter-spacing: 0.02em; }
+  .sync { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+  .sync i { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); display: inline-block; }
+  .sync.ok i { background: var(--accent); }
+
+  .now { display: flex; flex-direction: column; gap: 2px; }
+  .now-label { font-size: 12px; color: var(--muted); letter-spacing: 0.06em; }
+  .now-val { font-family: var(--font-num); font-weight: 700; font-size: 64px; line-height: 1.05; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+  .now-val small { font-size: 20px; font-weight: 500; margin-left: 6px; color: var(--muted); letter-spacing: 0; }
+  .now-meta { color: var(--muted); font-size: 14px; }
+
+  .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 18px; }
+  .section-title { font-size: 13px; font-weight: 700; color: var(--muted); letter-spacing: 0.06em; margin: 0 0 12px; }
+
+  /* entry form */
+  .entry { display: grid; gap: 14px; }
+  .row2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr); gap: 12px; }
+  @media (max-width: 420px) { .row2 { grid-template-columns: minmax(0, 1fr); } }
+  .field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  .field label { font-size: 12px; color: var(--muted); }
+  .inp {
+    width: 100%; min-width: 0; background: var(--bg); border: 1px solid var(--line);
+    border-radius: 10px; padding: 10px 12px; height: 48px;
+  }
+  .inp:focus { border-color: var(--accent); outline: none; box-shadow: 0 0 0 3px var(--accent-soft); }
+  .kg-wrap { position: relative; }
+  .kg-wrap .inp { font-family: var(--font-num); font-size: 24px; font-weight: 700; padding-right: 44px; font-variant-numeric: tabular-nums; }
+  .kg-wrap span { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); color: var(--muted); font-size: 14px; pointer-events: none; }
+  .when-row { display: flex; gap: 8px; align-items: stretch; }
+  .when-row .inp { flex: 1; }
+  .btn {
+    border: 1px solid var(--line); background: var(--surface); border-radius: 10px;
+    padding: 0 14px; height: 48px; cursor: pointer; white-space: nowrap;
+  }
+  .btn.sm { height: 34px; padding: 0 12px; font-size: 13px; border-radius: 8px; }
+  .btn.primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); font-weight: 700; }
+  .btn.primary:disabled { opacity: 0.55; cursor: default; }
+  .btn.danger { color: var(--danger); border-color: var(--danger); }
+  .err { color: var(--danger); font-size: 13px; min-height: 1.2em; margin: 0; }
+
+  /* chart */
+  .chart-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
+  .tabs { display: inline-flex; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 3px; gap: 2px; }
+  .tabs button { border: 0; background: transparent; border-radius: 7px; padding: 4px 12px; font-size: 13px; cursor: pointer; color: var(--muted); }
+  .tabs button[aria-pressed="true"] { background: var(--accent); color: var(--accent-fg); font-weight: 700; }
+  .readout { font-size: 13px; color: var(--muted); min-height: 1.6em; font-variant-numeric: tabular-nums; }
+  .readout b { color: var(--fg); font-family: var(--font-num); font-size: 15px; }
+  .chart-box { position: relative; width: 100%; min-height: 240px; }
+  .chart-box svg { display: block; width: 100%; touch-action: pan-y; }
+  .chart-empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center; color: var(--muted); padding: 0 24px; font-size: 14px; }
+  .gridline { stroke: var(--line); stroke-width: 1; }
+  .tick { fill: var(--muted); font-size: 11px; font-family: var(--font-num); }
+  .line { stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; fill: none; }
+  .dot { fill: var(--surface); stroke: var(--accent); stroke-width: 2; }
+  .dot-last { fill: var(--accent); stroke: var(--accent); stroke-width: 2; }
+  .ring { fill: none; stroke: var(--fg); stroke-width: 1.5; }
+  .goal-line { stroke: var(--goal); stroke-width: 1.5; stroke-dasharray: 5 4; fill: none; }
+  .goal-text { fill: var(--goal); font-size: 11px; font-family: var(--font-num); }
+
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 0; margin: 14px 0 0; border-top: 1px solid var(--line); }
+  .stats div { padding: 10px 0 0; }
+  .stats dt { font-size: 12px; color: var(--muted); }
+  .stats dd { margin: 0; font-family: var(--font-num); font-weight: 700; font-size: 18px; font-variant-numeric: tabular-nums; }
+  .goal-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); font-size: 13px; color: var(--muted); }
+  .goal-row .inp { width: 96px; height: 34px; padding: 4px 10px; font-family: var(--font-num); font-size: 14px; border-radius: 8px; }
+
+  /* history */
+  .day { padding: 14px 0 6px; border-top: 1px solid var(--line); }
+  .day:first-of-type { border-top: 0; padding-top: 0; }
+  .day-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  .day-head h3 { margin: 0; font-size: 14px; font-weight: 700; }
+  .day-head span { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .log { list-style: none; margin: 6px 0 0; padding: 0; }
+  .log li { display: grid; grid-template-columns: 52px auto minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 6px 0; }
+  .t { font-family: var(--font-num); color: var(--muted); font-variant-numeric: tabular-nums; }
+  .w { font-family: var(--font-num); font-weight: 700; font-size: 18px; font-variant-numeric: tabular-nums; }
+  .w small { font-size: 12px; color: var(--muted); font-weight: 500; margin-left: 2px; }
+  .memo { color: var(--muted); font-size: 13px; overflow-wrap: anywhere; min-width: 0; }
+  .del { border: 0; background: transparent; color: var(--muted); font-size: 12px; cursor: pointer; padding: 6px 4px; }
+  .del:hover { color: var(--danger); }
+  .confirm { display: inline-flex; gap: 6px; }
+  .empty { color: var(--muted); font-size: 14px; margin: 0; }
+  .more { margin-top: 12px; width: 100%; }
+
+  .data-row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .data-row .btn { flex: 1 1 140px; }
+  .note { color: var(--muted); font-size: 12px; margin: 10px 0 0; }
+  .foot { text-align: center; font-size: 12px; color: var(--muted); }
+  .foot a { color: var(--muted); }
+  .toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(20px + env(safe-area-inset-bottom, 0px)); background: var(--fg); color: var(--bg); padding: 10px 16px; border-radius: 10px; font-size: 14px; max-width: calc(100% - 32px); z-index: 20; }
+</style>
+</head>
+<body>
+<main class="wrap">
+  <header class="top">
+    <div class="brand">体重ログ</div>
+    <div class="sync" id="sync"><i></i><span>読み込み中…</span></div>
+  </header>
+
+  <section class="now" aria-live="polite">
+    <div class="now-label">最新の記録</div>
+    <div class="now-val"><span id="nowKg">--.-</span><small>kg</small></div>
+    <div class="now-meta" id="nowMeta">まだ記録がありません</div>
+  </section>
+
+  <form class="panel entry" id="form" novalidate>
+    <h2 class="section-title" style="margin:0">体重を記録する</h2>
+    <div class="row2">
+      <div class="field">
+        <label for="weight">体重</label>
+        <div class="kg-wrap">
+          <input class="inp" id="weight" type="number" inputmode="decimal" step="0.1" min="20" max="300" placeholder="62.4" autocomplete="off">
+          <span>kg</span>
+        </div>
+      </div>
+      <div class="field">
+        <label for="when">測った日時</label>
+        <div class="when-row">
+          <input class="inp" id="when" type="datetime-local">
+          <button class="btn" type="button" id="nowBtn" title="現在の日時にする">今</button>
+        </div>
+      </div>
+    </div>
+    <div class="field">
+      <label for="memo">メモ（任意）</label>
+      <input class="inp" id="memo" type="text" maxlength="60" placeholder="朝食前、運動後など" autocomplete="off">
+    </div>
+    <p class="err" id="err" role="alert"></p>
+    <button class="btn primary" type="submit" id="save">記録する</button>
+  </form>
+
+  <section class="panel">
+    <div class="chart-head">
+      <h2 class="section-title" style="margin:0">推移</h2>
+      <div class="tabs" id="tabs" role="group" aria-label="表示期間">
+        <button type="button" data-range="7" aria-pressed="false">7日</button>
+        <button type="button" data-range="30" aria-pressed="true">30日</button>
+        <button type="button" data-range="90" aria-pressed="false">90日</button>
+        <button type="button" data-range="all" aria-pressed="false">全期間</button>
+      </div>
+    </div>
+    <div class="readout" id="readout"></div>
+    <div class="chart-box" id="chartBox">
+      <svg id="svg" height="240" role="img" aria-label="体重の推移グラフ"></svg>
+      <div class="chart-empty" id="chartEmpty" hidden>この期間の記録はまだありません。<br>記録すると推移がここに表示されます。</div>
+    </div>
+    <dl class="stats" id="stats"></dl>
+    <div class="goal-row" id="goalRow">
+      <label for="goalInp">目標体重</label>
+      <input class="inp" id="goalInp" type="number" inputmode="decimal" step="0.1" min="20" max="300" placeholder="60.0">
+      <span>kg</span>
+      <button class="btn sm" type="button" id="goalSet">設定</button>
+      <button class="btn sm" type="button" id="goalClear" hidden>解除</button>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2 class="section-title">履歴</h2>
+    <div id="history"></div>
+  </section>
+
+  <section class="panel">
+    <h2 class="section-title">データの管理</h2>
+    <div class="data-row">
+      <button class="btn" type="button" id="exportBtn">CSVで書き出す</button>
+      <button class="btn" type="button" id="importBtn">CSVを読み込む</button>
+      <input type="file" id="importFile" accept=".csv,text/csv,text/plain" hidden>
+    </div>
+    <p class="note">記録はこの端末のブラウザ（アプリ）内にだけ保存され、外部には送信されません。端末の変更やアプリの削除に備えて、ときどき書き出しておくと安心です。</p>
+  </section>
+
+  <p class="foot"><a href="privacy.html">プライバシーポリシー</a></p>
+</main>
+<div class="toast" id="toast" hidden></div>
+<script>
+
+(function () {
+  'use strict';
+  var $ = function (s) { return document.querySelector(s); };
+  var pad = function (n) { return String(n).padStart(2, '0'); };
+  var WD = ['日', '月', '火', '水', '木', '金', '土'];
+  var DAY = 864e5;
+
+  function toLocalInput(d) {
+    return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + 'T' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+  }
+  function fmtDate(ts) { var d = new Date(ts); return (d.getMonth() + 1) + '月' + d.getDate() + '日（' + WD[d.getDay()] + '）'; }
+  function fmtTime(ts) { var d = new Date(ts); return pad(d.getHours()) + ':' + pad(d.getMinutes()); }
+  function dayKey(ts) { var d = new Date(ts); return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
+  function kgStr(v) { return v.toFixed(1); }
+  function signed(v) { var r = Math.round(v * 10) / 10; return (r > 0 ? '+' : r < 0 ? '−' : '±') + Math.abs(r).toFixed(1); }
+
+  function h(tag, props) {
+    var el = document.createElement(tag);
+    if (props) {
+      Object.keys(props).forEach(function (k) {
+        var v = props[k];
+        if (k === 'class') el.className = v;
+        else if (k.indexOf('on') === 0) el.addEventListener(k.slice(2), v);
+        else if (v === true) el.setAttribute(k, '');
+        else if (v !== false && v != null) el.setAttribute(k, v);
+      });
+    }
+    for (var i = 2; i < arguments.length; i++) {
+      var c = arguments[i];
+      if (c == null || c === false) continue;
+      el.append(c.nodeType ? c : document.createTextNode(String(c)));
+    }
+    return el;
+  }
+  var SVGNS = 'http://www.w3.org/2000/svg';
+  function s(tag, attrs, text) {
+    var el = document.createElementNS(SVGNS, tag);
+    Object.keys(attrs || {}).forEach(function (k) { el.setAttribute(k, attrs[k]); });
+    if (text != null) el.textContent = text;
+    return el;
+  }
+
+  function lsGet(k, d) { try { var v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch (e) { return d; } }
+  function lsSet(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch (e) { state.msg = '保存できません（ストレージが使えません）'; return false; } }
+
+  var state = { entries: [], goal: null, range: '30', activeTs: null, pendingDelete: null, shown: 50, mode: 'loading', msg: '' };
+  var backend = null;
+  var geom = null;
+
+  /* ---------- storage backends ---------- */
+  function useLocal() {
+    state.mode = 'local';
+    state.entries = (lsGet('weightlog.v1', []) || []).filter(validEntry).sort(byTs);
+    var g = lsGet('weightlog.goal', null);
+    state.goal = typeof g === 'number' ? g : null;
+    backend = {
+      add: function (e) {
+        e.id = 'l' + Date.now() + Math.random().toString(36).slice(2, 6);
+        state.entries.push(e); state.entries.sort(byTs); lsSet('weightlog.v1', state.entries);
+        renderAll(); return Promise.resolve();
+      },
+      remove: function (id) {
+        state.entries = state.entries.filter(function (e) { return e.id !== id; });
+        lsSet('weightlog.v1', state.entries); renderAll(); return Promise.resolve();
+      },
+      setGoal: function (kg) { state.goal = kg; lsSet('weightlog.goal', kg); renderAll(); return Promise.resolve(); }
+    };
+    renderAll();
+  }
+
+  function validEntry(e) { return e && typeof e.ts === 'number' && isFinite(e.ts) && typeof e.kg === 'number' && isFinite(e.kg); }
+  function byTs(a, b) { return a.ts - b.ts; }
+
+  /* ---------- rendering ---------- */
+  function renderAll() { renderSync(); renderNow(); renderChart(); renderStats(); renderGoal(); renderHistory(); }
+
+  function renderSync() {
+    var el = $('#sync');
+    var text = state.msg || (state.mode === 'loading' ? '読み込み中…' : 'この端末に保存');
+    el.className = 'sync' + (state.mode === 'local' && !state.msg ? ' ok' : '');
+    el.replaceChildren(h('i'), h('span', null, text));
+  }
+
+  function renderNow() {
+    var es = state.entries, n = es.length;
+    if (!n) { $('#nowKg').textContent = '--.-'; $('#nowMeta').textContent = 'まだ記録がありません'; return; }
+    var last = es[n - 1];
+    $('#nowKg').textContent = kgStr(last.kg);
+    var meta = fmtDate(last.ts) + ' ' + fmtTime(last.ts);
+    if (n > 1) meta += '　前回比 ' + signed(last.kg - es[n - 2].kg) + ' kg';
+    $('#nowMeta').textContent = meta;
+  }
+
+  function windowFor() {
+    var es = state.entries;
+    if (state.range === 'all') {
+      if (!es.length) return { s: 0, e: 1, pts: [] };
+      var s0 = es[0].ts, e0 = es[es.length - 1].ts;
+      if (e0 - s0 < 36e5) { s0 -= 12 * 36e5; e0 += 12 * 36e5; }
+      else { var p = (e0 - s0) * 0.03; s0 -= p; e0 += p; }
+      return { s: s0, e: e0, pts: es };
+    }
+    var days = +state.range;
+    var e = Math.max(Date.now(), es.length ? es[es.length - 1].ts : 0);
+    var st = e - days * DAY;
+    return { s: st, e: e, pts: es.filter(function (x) { return x.ts >= st; }) };
+  }
+
+  function niceStep(range) {
+    var raw = range / 4, p = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / p;
+    return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10) * p;
+  }
+
+  function renderChart() {
+    var svg = $('#svg'), box = $('#chartBox'), empty = $('#chartEmpty'), readout = $('#readout');
+    var win = windowFor(), pts = win.pts;
+    svg.replaceChildren();
+    geom = null;
+    if (!pts.length) {
+      svg.setAttribute('height', '240'); svg.style.visibility = 'hidden'; empty.hidden = false;
+      readout.textContent = '';
+      return;
+    }
+    empty.hidden = true; svg.style.visibility = 'visible';
+    var W = Math.max(box.clientWidth, 240), H = 240;
+    svg.setAttribute('width', W); svg.setAttribute('height', H); svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
+    var m = { l: 40, r: 14, t: 14, b: 28 };
+
+    var lo = Infinity, hi = -Infinity;
+    pts.forEach(function (p) { lo = Math.min(lo, p.kg); hi = Math.max(hi, p.kg); });
+    var goal = state.goal, showGoal = false;
+    if (goal != null && goal >= lo - 5 && goal <= hi + 5) { showGoal = true; lo = Math.min(lo, goal); hi = Math.max(hi, goal); }
+    if (hi - lo < 1) { var c = (hi + lo) / 2; lo = c - 0.5; hi = c + 0.5; }
+    var padY = (hi - lo) * 0.12; lo -= padY; hi += padY;
+    var step = niceStep(hi - lo);
+    var yMin = Math.floor(lo / step) * step, yMax = Math.ceil(hi / step) * step;
+    var dec = step >= 1 ? 0 : 1;
+
+    var xs = function (t) { return m.l + (t - win.s) / (win.e - win.s) * (W - m.l - m.r); };
+    var ys = function (v) { return m.t + (yMax - v) / (yMax - yMin) * (H - m.t - m.b); };
+
+    for (var v = yMin; v <= yMax + step / 2; v += step) {
+      var y = ys(v);
+      svg.append(s('line', { x1: m.l, x2: W - m.r, y1: y, y2: y, class: 'gridline' }));
+      svg.append(s('text', { x: m.l - 6, y: y + 4, 'text-anchor': 'end', class: 'tick' }, v.toFixed(dec)));
+    }
+
+    var span = win.e - win.s, ticks = [], d;
+    if (span <= 2.2 * DAY) {
+      d = new Date(win.s); d.setMinutes(0, 0, 0);
+      while (d.getHours() % 6 !== 0 || d.getTime() < win.s) d.setHours(d.getHours() + 1);
+      while (d.getTime() <= win.e) {
+        ticks.push({ t: d.getTime(), label: d.getHours() === 0 ? (d.getMonth() + 1) + '/' + d.getDate() : d.getHours() + '時' });
+        d.setHours(d.getHours() + 6);
+      }
+    } else {
+      var spanDays = span / DAY, every = 1, opts = [1, 2, 7, 14, 30];
+      for (var i = 0; i < opts.length; i++) { every = opts[i]; if (spanDays / every <= 6) break; }
+      d = new Date(win.s); d.setHours(0, 0, 0, 0);
+      if (d.getTime() < win.s) d.setDate(d.getDate() + 1);
+      while (d.getTime() <= win.e) {
+        ticks.push({ t: d.getTime(), label: (d.getMonth() + 1) + '/' + d.getDate() });
+        d.setDate(d.getDate() + every);
+      }
+    }
+    ticks.forEach(function (tk) {
+      var x = xs(tk.t);
+      var anchor = x > W - 24 ? 'end' : x < m.l + 10 ? 'start' : 'middle';
+      svg.append(s('line', { x1: x, x2: x, y1: H - m.b, y2: H - m.b + 4, class: 'gridline' }));
+      svg.append(s('text', { x: x, y: H - 8, 'text-anchor': anchor, class: 'tick' }, tk.label));
+    });
+
+    if (showGoal) {
+      var gy = ys(goal);
+      svg.append(s('line', { x1: m.l, x2: W - m.r, y1: gy, y2: gy, class: 'goal-line' }));
+      svg.append(s('text', { x: W - m.r, y: gy - 5, 'text-anchor': 'end', class: 'goal-text' }, '目標 ' + kgStr(goal)));
+    }
+
+    var dpath = pts.map(function (p, i) { return (i ? 'L' : 'M') + xs(p.ts).toFixed(1) + ' ' + ys(p.kg).toFixed(1); }).join(' ');
+    if (pts.length > 1) svg.append(s('path', { d: dpath, class: 'line' }));
+    pts.forEach(function (p, i) {
+      var last = i === pts.length - 1;
+      svg.append(s('circle', { cx: xs(p.ts), cy: ys(p.kg), r: last ? 5 : 3.5, class: last ? 'dot-last' : 'dot' }));
+    });
+
+    var active = pts[pts.length - 1];
+    for (var j = 0; j < pts.length; j++) if (pts[j].ts === state.activeTs) active = pts[j];
+    svg.append(s('circle', { cx: xs(active.ts), cy: ys(active.kg), r: 9, class: 'ring' }));
+    readout.replaceChildren(
+      fmtDate(active.ts) + ' ' + fmtTime(active.ts) + '　',
+      h('b', null, kgStr(active.kg) + ' kg'),
+      active.memo ? '　' + active.memo : ''
+    );
+    geom = { xs: xs, pts: pts };
+  }
+
+  function onChartPointer(ev) {
+    if (!geom) return;
+    var rect = $('#svg').getBoundingClientRect();
+    var x = ev.clientX - rect.left, best = null, bd = Infinity;
+    geom.pts.forEach(function (p) { var dd = Math.abs(geom.xs(p.ts) - x); if (dd < bd) { bd = dd; best = p; } });
+    if (best && best.ts !== state.activeTs) { state.activeTs = best.ts; renderChart(); }
+  }
+
+  function renderStats() {
+    var pts = windowFor().pts, el = $('#stats');
+    el.replaceChildren();
+    var item = function (k, v) { el.append(h('div', null, h('dt', null, k), h('dd', null, v))); };
+    if (!pts.length) { item('平均', '--'); item('最低', '--'); item('最高', '--'); item('期間の変化', '--'); return; }
+    var sum = 0, lo = Infinity, hi = -Infinity;
+    pts.forEach(function (p) { sum += p.kg; lo = Math.min(lo, p.kg); hi = Math.max(hi, p.kg); });
+    item('平均', kgStr(sum / pts.length) + ' kg');
+    item('最低', kgStr(lo) + ' kg');
+    item('最高', kgStr(hi) + ' kg');
+    item('期間の変化', pts.length > 1 ? signed(pts[pts.length - 1].kg - pts[0].kg) + ' kg' : '--');
+  }
+
+  function renderGoal() {
+    $('#goalClear').hidden = state.goal == null;
+    var inp = $('#goalInp');
+    if (document.activeElement !== inp) inp.value = state.goal == null ? '' : kgStr(state.goal);
+  }
+
+  var delTimer = null;
+  function renderHistory() {
+    var root = $('#history');
+    root.replaceChildren();
+    var es = state.entries;
+    if (!es.length) {
+      root.append(h('p', { class: 'empty' }, '記録すると、日ごとに測った時刻と体重がここに並びます。'));
+      return;
+    }
+    var desc = es.slice().reverse(), shown = desc.slice(0, state.shown), groups = [], cur = null;
+    shown.forEach(function (e) {
+      var k = dayKey(e.ts);
+      if (!cur || cur.k !== k) { cur = { k: k, ts: e.ts, items: [] }; groups.push(cur); }
+      cur.items.push(e);
+    });
+    groups.forEach(function (g) {
+      var all = es.filter(function (e) { return dayKey(e.ts) === g.k; });
+      var avg = all.reduce(function (a, e) { return a + e.kg; }, 0) / all.length;
+      var meta = all.length > 1 ? all.length + '回 ・ 平均 ' + kgStr(avg) + ' kg' : '1回';
+      var ul = h('ul', { class: 'log' });
+      g.items.forEach(function (e) {
+        var actions;
+        if (state.pendingDelete === e.id) {
+          actions = h('span', { class: 'confirm' },
+            h('button', { class: 'btn sm danger', type: 'button', onclick: function () { doDelete(e.id); } }, '削除する'),
+            h('button', { class: 'btn sm', type: 'button', onclick: function () { state.pendingDelete = null; renderHistory(); } }, 'やめる'));
+        } else {
+          actions = h('button', {
+            class: 'del', type: 'button', 'aria-label': fmtDate(e.ts) + ' ' + fmtTime(e.ts) + ' の記録を削除',
+            onclick: function () {
+              state.pendingDelete = e.id; renderHistory();
+              clearTimeout(delTimer);
+              delTimer = setTimeout(function () { state.pendingDelete = null; renderHistory(); }, 4000);
+            }
+          }, '削除');
+        }
+        ul.append(h('li', null,
+          h('span', { class: 't' }, fmtTime(e.ts)),
+          h('span', { class: 'w' }, kgStr(e.kg), h('small', null, 'kg')),
+          h('span', { class: 'memo' }, e.memo || ''),
+          actions));
+      });
+      root.append(h('div', { class: 'day' },
+        h('div', { class: 'day-head' }, h('h3', null, fmtDate(g.ts)), h('span', null, meta)), ul));
+    });
+    if (desc.length > shown.length) {
+      root.append(h('button', {
+        class: 'btn more', type: 'button',
+        onclick: function () { state.shown += 50; renderHistory(); }
+      }, 'さらに表示（残り ' + (desc.length - shown.length) + ' 件）'));
+    }
+  }
+
+  function doDelete(id) {
+    state.pendingDelete = null;
+    backend.remove(id).catch(function () { $('#err').textContent = '削除できませんでした。もう一度お試しください。'; });
+  }
+
+  /* ---------- events ---------- */
+  function setNow() { $('#when').value = toLocalInput(new Date()); }
+
+  $('#nowBtn').addEventListener('click', setNow);
+
+  $('#form').addEventListener('submit', function (ev) {
+    ev.preventDefault();
+    var err = $('#err'); err.textContent = '';
+    if (!backend) { err.textContent = '保存先を準備中です。少し待ってからお試しください。'; return; }
+    var kg = parseFloat($('#weight').value);
+    var ts = new Date($('#when').value).getTime();
+    if (!isFinite(kg) || kg < 20 || kg > 300) { err.textContent = '体重は20〜300kgの範囲で入力してください。'; return; }
+    if (!isFinite(ts)) { err.textContent = '測った日時を入力してください。'; return; }
+    if (ts > Date.now() + 5 * 60000) { err.textContent = '未来の日時は記録できません。'; return; }
+    var btn = $('#save'); btn.disabled = true;
+    backend.add({ ts: ts, kg: Math.round(kg * 10) / 10, memo: $('#memo').value.trim() })
+      .then(function () {
+        $('#weight').value = ''; $('#memo').value = ''; setNow(); state.activeTs = ts;
+      })
+      .catch(function () { err.textContent = '保存できませんでした。もう一度お試しください。'; })
+      .then(function () { btn.disabled = false; });
+  });
+
+  $('#tabs').addEventListener('click', function (ev) {
+    var b = ev.target.closest('button[data-range]');
+    if (!b) return;
+    state.range = b.getAttribute('data-range'); state.activeTs = null;
+    document.querySelectorAll('#tabs button').forEach(function (x) { x.setAttribute('aria-pressed', x === b ? 'true' : 'false'); });
+    renderChart(); renderStats();
+  });
+
+  $('#svg').addEventListener('pointerdown', onChartPointer);
+  $('#svg').addEventListener('pointermove', function (ev) { if (ev.pointerType === 'mouse') onChartPointer(ev); });
+
+  $('#goalSet').addEventListener('click', function () {
+    var v = parseFloat($('#goalInp').value);
+    var err = $('#err');
+    if (!isFinite(v) || v < 20 || v > 300) { err.textContent = '目標体重は20〜300kgの範囲で入力してください。'; return; }
+    err.textContent = '';
+    if (!backend) return;
+    backend.setGoal(Math.round(v * 10) / 10).catch(function () { err.textContent = '目標を保存できませんでした。'; });
+  });
+  $('#goalClear').addEventListener('click', function () {
+    if (backend) backend.setGoal(null).catch(function () { $('#err').textContent = '目標を解除できませんでした。'; });
+  });
+
+  var lastW = 0;
+  function watchResize() {
+    var box = $('#chartBox');
+    var fn = function () { var w = box.clientWidth; if (w !== lastW) { lastW = w; renderChart(); } };
+    if (window.ResizeObserver) new ResizeObserver(fn).observe(box);
+    else window.addEventListener('resize', fn);
+  }
+
+  /* ---------- CSV / misc ---------- */
+  function toast(t) {
+    var el = $('#toast'); el.textContent = t; el.hidden = false;
+    clearTimeout(toast._t); toast._t = setTimeout(function () { el.hidden = true; }, 3500);
+  }
+  function csvCell(v) { v = String(v == null ? '' : v); return /[",\n\r]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; }
+  function exportCsv() {
+    if (!state.entries.length) { toast('書き出す記録がありません'); return; }
+    var lines = ['日時,体重(kg),メモ'];
+    state.entries.forEach(function (e) {
+      var d = new Date(e.ts);
+      var dt = d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+      lines.push([dt, e.kg.toFixed(1), e.memo].map(csvCell).join(','));
+    });
+    var blob = new Blob(['\ufeff' + lines.join('\r\n') + '\r\n'], { type: 'text/csv;charset=utf-8' });
+    var now = new Date();
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'weight-log-' + now.getFullYear() + pad(now.getMonth() + 1) + pad(now.getDate()) + '.csv';
+    document.body.append(a); a.click(); a.remove();
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 4000);
+    toast(state.entries.length + '件を書き出しました');
+  }
+  function parseCsv(text) {
+    var rows = [], row = [], cell = '', q = false;
+    text = text.replace(/^\ufeff/, '');
+    for (var i = 0; i < text.length; i++) {
+      var c = text[i];
+      if (q) {
+        if (c === '"') { if (text[i + 1] === '"') { cell += '"'; i++; } else q = false; }
+        else cell += c;
+      } else if (c === '"') q = true;
+      else if (c === ',') { row.push(cell); cell = ''; }
+      else if (c === '\n' || c === '\r') {
+        if (c === '\r' && text[i + 1] === '\n') i++;
+        row.push(cell); cell = ''; rows.push(row); row = [];
+      } else cell += c;
+    }
+    if (cell !== '' || row.length) { row.push(cell); rows.push(row); }
+    return rows;
+  }
+  function importCsv(text) {
+    var rows = parseCsv(text), added = 0, skipped = 0;
+    var seen = {};
+    state.entries.forEach(function (e) { seen[e.ts + '|' + e.kg] = true; });
+    rows.forEach(function (r) {
+      if (r.length < 2) return;
+      var m = String(r[0]).trim().match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})(?:[ T](\d{1,2}):(\d{2}))?/);
+      var kg = parseFloat(r[1]);
+      if (!m || !isFinite(kg) || kg < 20 || kg > 300) { if (m || /\d/.test(r[0])) skipped++; return; }
+      var ts = new Date(+m[1], +m[2] - 1, +m[3], m[4] ? +m[4] : 0, m[5] ? +m[5] : 0).getTime();
+      kg = Math.round(kg * 10) / 10;
+      var key = ts + '|' + kg;
+      if (seen[key]) { skipped++; return; }
+      seen[key] = true;
+      state.entries.push({ id: 'l' + Date.now() + Math.random().toString(36).slice(2, 8) + added, ts: ts, kg: kg, memo: String(r[2] || '').slice(0, 60) });
+      added++;
+    });
+    state.entries.sort(byTs); lsSet('weightlog.v1', state.entries); renderAll();
+    toast(added + '件を読み込みました' + (skipped ? '（' + skipped + '件は重複または不正のため除外）' : ''));
+  }
+  $('#exportBtn').addEventListener('click', exportCsv);
+  $('#importBtn').addEventListener('click', function () { $('#importFile').click(); });
+  $('#importFile').addEventListener('change', function (ev) {
+    var f = ev.target.files && ev.target.files[0];
+    if (!f) return;
+    var rd = new FileReader();
+    rd.onload = function () { importCsv(String(rd.result || '')); };
+    rd.onerror = function () { toast('ファイルを読み込めませんでした'); };
+    rd.readAsText(f, 'utf-8');
+    ev.target.value = '';
+  });
+  function registerSW() {
+    if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+      navigator.serviceWorker.register('sw.js').catch(function () {});
+    }
+  }
+
+  /* ---------- start ---------- */
+  setNow();
+  renderAll();
+  watchResize();
+  useLocal();
+  registerSW();
+
+})();
+</script>
+</body>
+</html>
